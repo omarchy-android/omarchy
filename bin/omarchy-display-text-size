@@ -174,6 +174,11 @@ set_terminal_size() {
       [[ $new_id =~ ^[0-9]+$ ]] && printf '%s\n' "$new_id" >"$id_file"
     fi
   fi
+
+  # Applying the font sizes succeeded even when an optional terminal or
+  # notification branch had nothing to do. Do not leak that branch's false
+  # test status back to the display panel.
+  return 0
 }
 
 # Report the current terminal point size from whichever config we find first.
