@@ -12,6 +12,11 @@ if [[ -z $node_id || -z $source_name ]]; then
   exit 1
 fi
 
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  # Android microphone capture is not exported into this desktop yet.
+  exit 0
+fi
+
 wpctl set-default "$node_id" 2>/dev/null || true
 pactl set-default-source "$source_name" 2>/dev/null || true
 

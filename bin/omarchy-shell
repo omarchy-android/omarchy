@@ -100,7 +100,14 @@ fi
 # positionals. qs reports connection failures with a nonzero exit, but IPC-level
 # failures (unknown target/function, bad arguments) go to stdout with exit 0.
 ipc_timeout=${OMARCHY_SHELL_IPC_TIMEOUT:-2s}
-output=$(timeout --kill-after=1s "$ipc_timeout" qs ipc -n -p "$OMARCHY_PATH/shell" call -- "$@" 2>/dev/null)
+instance_args=(-n -p "$OMARCHY_PATH/shell")
+# Separate PRoot-traced clients do not compare as the same display connection
+# even though they share this guest's one Wayland socket. Select the newest
+# matching Omarchy configuration across displays so shortcuts reach its shell.
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  instance_args+=(--any-display)
+fi
+output=$(timeout --kill-after=1s "$ipc_timeout" qs ipc "${instance_args[@]}" call -- "$@" 2>/dev/null)
 ipc_status=$?
 
 if (( ipc_status == 124 || ipc_status == 137 )); then

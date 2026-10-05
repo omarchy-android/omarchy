@@ -3,6 +3,16 @@
 # omarchy:summary=Restart audio services and recover stuck USB audio devices.
 # omarchy:examples=omarchy restart audio | omarchy-restart-audio
 
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  export PULSE_SERVER=tcp:127.0.0.1:4715
+  echo "Android audio is managed by the Omarchy PRoot launcher."
+  if omarchy-proot-audio status; then
+    exit 0
+  fi
+  echo "The Android audio bridge is unavailable; restart Omarchy from Termux." >&2
+  exit 1
+fi
+
 services=(wireplumber.service pipewire.service pipewire-pulse.service)
 
 restart_audio_services() {

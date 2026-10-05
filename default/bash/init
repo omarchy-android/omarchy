@@ -1,4 +1,4 @@
-if command -v mise &> /dev/null; then
+if [[ ${OMARCHY_PROOT:-0} != 1 ]] && command -v mise &> /dev/null; then
   eval "$(mise activate bash)"
 fi
 
@@ -21,6 +21,9 @@ fi
 # Only the key bindings (Ctrl-R, Ctrl-T, Alt-C): fzf's completion.bash rewraps
 # ~76 commands' completions on every shell start, adding ~25ms before the prompt.
 if command -v fzf &> /dev/null; then
+  # PRoot cannot resolve /dev/fd from process substitution that completion.bash
+  # uses upstream. Only source the key bindings here so the interactive prompt
+  # still gets Ctrl-R/Ctrl-T/Alt-C without paying the ~25ms completion rewrap.
   if [[ -f /usr/share/fzf/key-bindings.bash ]]; then
     source /usr/share/fzf/key-bindings.bash
   fi

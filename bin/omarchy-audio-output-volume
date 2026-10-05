@@ -1,5 +1,9 @@
 #!/bin/bash
 
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  export PULSE_SERVER=tcp:127.0.0.1:4715
+fi
+
 # omarchy:summary=Adjust output volume and show the Omarchy OSD
 # omarchy:args=<raise|lower|mute-toggle|+N|-N>
 # omarchy:examples=omarchy audio output volume raise | omarchy audio output volume lower | omarchy audio output volume mute-toggle | omarchy audio output volume +1

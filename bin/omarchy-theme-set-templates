@@ -234,6 +234,7 @@ add_function_values() {
       add_gradient_function_value "$token"
     fi
   done < <(grep -hEo "$MIX_TOKEN_PATTERN|$GRADIENT_TOKEN_PATTERN" "${template_files[@]}" 2>/dev/null || true)
+
 }
 
 strip_shell_section_header() {
@@ -431,14 +432,17 @@ if [[ -f $COLORS_FILE ]]; then
   mix_table=$(mktemp)
   declare -A rendered=()
 
+
   shopt -s nullglob
   template_files=("$USER_TEMPLATES_DIR"/*.tpl "$TEMPLATES_DIR"/*.tpl)
 
   # Parsing and alias/fallback resolution (legacy colorN names, derived
   # shades, mode/theme_type) is shared with every other colors.toml consumer.
+  omarchy-theme-color --file "$COLORS_FILE" --all >"$resolved_colors"
   while IFS=$'\t' read -r key value; do
     THEME_COLORS[$key]="$value"
-  done < <(omarchy-theme-color --file "$COLORS_FILE" --all)
+  done <"$resolved_colors"
+  rm "$resolved_colors"
 
   for key in "${!THEME_COLORS[@]}"; do
     add_template_value "$key" "${THEME_COLORS[$key]}"

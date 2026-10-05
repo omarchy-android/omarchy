@@ -8,6 +8,8 @@ import Quickshell.Io
 // for changes, and optionally merges snapshots synced from other machines.
 Item {
   id: root
+  readonly property bool prootMode: Quickshell.env("OMARCHY_PROOT") === "1"
+                                  && Quickshell.env("OMARCHY_UNLIMITED_PROCS") !== "1"
   visible: false
 
   property var settings: ({})
@@ -115,8 +117,10 @@ Item {
   }
 
   Component.onCompleted: {
-    rescanAgents()
-    if (syncConfigured()) scheduleSync()
+    if (!root.prootMode) {
+      rescanAgents()
+      if (syncConfigured()) scheduleSync()
+    }
   }
 
   // -------------------------------------------------------------- refresh
@@ -146,7 +150,7 @@ Item {
 
   Timer {
     interval: root.nearLimit ? Math.min(180, root.refreshIntervalSec) * 1000 : root.refreshIntervalSec * 1000
-    running: true
+    running: !root.prootMode
     repeat: true
     triggeredOnStart: true
     onTriggered: root.runUpdate(root.nearLimit ? "limits" : "normal")

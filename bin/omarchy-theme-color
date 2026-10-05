@@ -289,9 +289,12 @@ fi
 resolve_theme_colors
 
 if [[ $OUTPUT == "all" ]]; then
+  sorted_keys=$(mktemp)
+  printf '%s\n' "${!THEME_COLORS[@]}" | LC_ALL=C sort >"$sorted_keys"
   while IFS= read -r key; do
     printf '%s\t%s\n' "$key" "${THEME_COLORS[$key]}"
-  done < <(printf '%s\n' "${!THEME_COLORS[@]}" | LC_ALL=C sort)
+  done <"$sorted_keys"
+  rm "$sorted_keys"
   exit 0
 fi
 

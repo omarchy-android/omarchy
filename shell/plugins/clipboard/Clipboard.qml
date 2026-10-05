@@ -8,6 +8,8 @@ import "ClipboardHistory.js" as ClipboardHistory
 
 Item {
   id: root
+  readonly property bool prootMode: Quickshell.env("OMARCHY_PROOT") === "1"
+                                  && Quickshell.env("OMARCHY_UNLIMITED_PROCS") !== "1"
 
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property bool opened: false
@@ -238,7 +240,9 @@ Item {
     Quickshell.execDetached([root.omarchyPath + "/bin/omarchy-clipboard-open", "--history-index", String(row.historyIndex)])
   }
 
-  Component.onCompleted: initProc.running = true
+  // Continuous wl-paste watchers cost several host processes under PRoot.
+  // Preserve the picker/UI and existing history without starting daemons.
+  Component.onCompleted: if (!root.prootMode) initProc.running = true
 
   ListModel { id: displayModel }
 
@@ -306,6 +310,7 @@ Item {
     interval: 1000
     repeat: false
     onTriggered: {
+      if (root.prootMode) return
       if (!textWatchProc.running) textWatchProc.running = true
       if (!imageWatchProc.running) imageWatchProc.running = true
     }
@@ -427,7 +432,6 @@ Item {
           color: "transparent"
 
           Text {
-            textFormat: Text.PlainText
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
@@ -496,7 +500,6 @@ Item {
                     }
 
                     Text {
-                      textFormat: Text.PlainText
                       width: parent.width - (parent.parent.previewImage.length > 0 ? parent.height + parent.spacing : 0)
                       height: parent.height
                       text: parent.parent.previewText
@@ -543,7 +546,6 @@ Item {
               }
 
               Text {
-                textFormat: Text.PlainText
                 visible: parent.activeRow && !parent.activeRow.previewImage
                 anchors.fill: parent
                 anchors.leftMargin: root.contentMargin
@@ -591,7 +593,6 @@ Item {
             }
 
             Text {
-              textFormat: Text.PlainText
               text: root.history.length === 0 ? "Clipboard is empty" : "No matches for “" + root.filterText + "”"
               color: root.foreground
               opacity: 0.7

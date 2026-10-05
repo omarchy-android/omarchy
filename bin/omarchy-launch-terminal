@@ -3,6 +3,13 @@
 # omarchy:summary=Launch a terminal in the active terminal's current directory
 # omarchy:args=[--pid=<terminal-pid>] [command...]
 
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  # Avoid the hyprctl/jq current-directory discovery chain in PRoot. Foot can
+  # map immediately and Bash starts in the user's home directory.
+  cd -- "$HOME" || exit 1
+  exec foot "$@"
+fi
+
 pid=""
 if [[ ${1:-} == --pid=* ]]; then
   pid=${1#--pid=}

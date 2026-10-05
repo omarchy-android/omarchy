@@ -13,6 +13,7 @@ Item {
   property string omarchyPath: ""
 
   readonly property string home: Quickshell.env("HOME")
+  readonly property bool prootMode: Quickshell.env("OMARCHY_PROOT") === "1"
   readonly property string stateHome: home + "/.local/state"
   readonly property string userName: Quickshell.env("USER") || Quickshell.env("LOGNAME")
   readonly property string currentBackgroundLink: stateHome + "/omarchy/current/background"
@@ -53,7 +54,7 @@ Item {
   property bool monitorDpmsKnown: false
   readonly property bool videoBackground: Util.isVideoPath(backgroundPath)
   property bool strandedLock: false
-  property bool strandedLockResolved: false
+  property bool strandedLockResolved: prootMode
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
@@ -105,6 +106,13 @@ Item {
   // a session locked this early is an orphan behind Hyprland's failsafe. Outputs
   // are often still absent here, so ask until the answer means something.
   function checkStrandedLock() {
+    // A fresh PRoot compositor cannot inherit an ext-session-lock from a
+    // previous systemd session. Avoid the repeated bash/hyprctl probes that
+    // otherwise consume several Android native-process slots at startup.
+    if (root.prootMode) {
+      strandedLockResolved = true
+      return
+    }
     if (strandedLockResolved || strandedLockCheckProc.running) return
 
     // A lock this shell took is nobody's orphan.
@@ -139,6 +147,10 @@ Item {
   }
 
   function refreshFingerprintStatus() {
+    if (root.prootMode) {
+      fingerprintConfigured = false
+      return
+    }
     if (!fingerprintCheckProc.running) fingerprintCheckProc.running = true
   }
 
@@ -814,6 +826,12 @@ Item {
   // the failsafe can be cleared from a TTY -- so re-ask rather than act on it.
   onPasswordPamConfiguredChanged: {
     if (!passwordPamConfigured) return
+
+    if (root.prootMode) {
+      strandedLock = false
+      strandedLockResolved = true
+      return
+    }
 
     strandedLock = false
     strandedLockResolved = false

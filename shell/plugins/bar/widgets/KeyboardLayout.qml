@@ -9,6 +9,8 @@ import "KeyboardLayoutModel.js" as KeyboardLayoutModel
 BarWidget {
   id: root
   moduleName: "omarchy.keyboard-layout"
+  readonly property bool prootMode: Quickshell.env("OMARCHY_PROOT") === "1"
+                                  && Quickshell.env("OMARCHY_UNLIMITED_PROCS") !== "1"
 
 
   property string layoutFull: ""
@@ -97,7 +99,7 @@ BarWidget {
   }
 
   Component.onCompleted: {
-    briefsProc.running = true
+    if (!root.prootMode) briefsProc.running = true
     refresh()
   }
 

@@ -1,7 +1,19 @@
 #!/bin/bash
 
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  export PULSE_SERVER=tcp:127.0.0.1:4715
+fi
+
 # omarchy:summary=Launch a URL as a web app in the default supported browser
 # omarchy:args=<url>
+
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  exec chromium \
+    --no-sandbox \
+    --disable-dev-shm-usage \
+    --password-store=basic \
+    --app="$1" "${@:2}"
+fi
 
 browser=$(omarchy-cmd-default-browser)
 

@@ -2,6 +2,10 @@
 
 # omarchy:summary=Toggle microphone mute. Drives the hardware mic-mute LED on laptops that expose one.
 
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  exit 0
+fi
+
 wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle >/dev/null
 
 if wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED; then

@@ -10,6 +10,7 @@ import "Model.js" as Model
 
 Panel {
   id: root
+  readonly property bool prootMode: Quickshell.env("OMARCHY_PROOT") === "1"
   moduleName: "omarchy.network"
   ipcTarget: "omarchy.network"
   // manageIpc: false so this panel can own the single IpcHandler the target
@@ -440,6 +441,9 @@ Panel {
   // when both are up, matching the default-route device.
   readonly property var wiredDevice: findDevice(DeviceType.Wired)
   readonly property string kind: {
+    // Android owns the real connection; NetworkManager inside PRoot cannot
+    // see or control it, though the guest shares the phone's working network.
+    if (root.prootMode) return "ethernet"
     if (wiredDevice && wiredDevice.connected) return "ethernet"
     if (connectedWifiNetwork) return "wifi"
     // NetworkManager can leave the active profile out of the device's
@@ -570,6 +574,12 @@ Panel {
   function refresh(scanWifi) {
     checkConnectivity()
     if (scanWifi === undefined) scanWifi = false
+    if (root.prootMode) {
+      root.info = ({ iface: "Android", type: "ethernet" })
+      root.dnsProvider = "Android"
+      root.syncWifiNetworks()
+      return
+    }
     if (!detailsProc.running) detailsProc.running = true
     if (!dnsProc.running) {
       dnsProc.command = ["bash", "-c", root.dnsCommand("")]
@@ -977,7 +987,7 @@ Panel {
     id: bandPoll
     interval: 4000
     repeat: true
-    running: root.opened
+    running: root.opened && !root.prootMode
     onTriggered: {
       if (bandProc.running) return
       bandProc.command = ["omarchy-network-band"]
@@ -1014,7 +1024,7 @@ Panel {
     id: detailsPoll
     interval: 1500
     repeat: true
-    running: root.opened
+    running: root.opened && !root.prootMode
     onTriggered: if (!detailsProc.running) detailsProc.running = true
   }
 
@@ -1227,7 +1237,6 @@ Panel {
         // Status only — the switch owns toggling, mouse and keyboard alike.
         Text {
           id: heroIcon
-          textFormat: Text.PlainText
           text: root.icon
           color: root.restricted ? root.bar.urgent : root.bar.foreground
           font.family: root.bar.fontFamily
@@ -1308,7 +1317,6 @@ Panel {
           // rather than in a pill, which crowded the on/off switch.
           Text {
             id: heroSsid
-            textFormat: Text.PlainText
             width: parent.width
 
             readonly property string title: {
@@ -1331,7 +1339,6 @@ Panel {
 
           Text {
             id: heroMeta
-            textFormat: Text.PlainText
             width: parent.width
             text: {
               if (root.hasCaptivePortal) return "SIGN-IN REQUIRED"
@@ -1895,9 +1902,7 @@ Panel {
 
       Text {
         id: networkIcon
-        textFormat: Text.PlainText
-        text: row.net ? Model.connectionIcon("wifi", row.net.signal,
-          row.isConnected && root.kind === "wifi" ? root.connectivity : "") : ""
+        text: row.net ? root.wifiIconFor(row.net.signal) : ""
         color: row.statusColor
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.title
@@ -1918,7 +1923,6 @@ Panel {
 
         Text {
           id: lockIndicator
-          textFormat: Text.PlainText
           visible: row.requiresCredentials || row.forgetVisible
           width: parent.width
           anchors.verticalCenter: parent.verticalCenter
@@ -1966,7 +1970,6 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
 
         Text {
-          textFormat: Text.PlainText
           text: row.net ? (row.net.ssid || "Hidden") : ""
           color: root.bar.foreground
           font.family: root.bar.fontFamily
@@ -1975,7 +1978,6 @@ Panel {
           width: parent.width
         }
         Text {
-          textFormat: Text.PlainText
           // Signal strength is conveyed by the wifi-bars icon and the
           // right-edge glyph/buttons carry protection or forget affordances,
           // so the second line only carries action status (Connecting…,
@@ -2082,7 +2084,6 @@ Panel {
         radius: Style.cornerRadius
 
         Text {
-          textFormat: Text.PlainText
           anchors.fill: parent
           horizontalAlignment: Text.AlignHCenter
           verticalAlignment: Text.AlignVCenter
@@ -2136,7 +2137,6 @@ Panel {
   }
 
   component InfoLabel: Text {
-    textFormat: Text.PlainText
     color: root.bar.foreground
     opacity: 0.6
     font.family: root.bar.fontFamily
@@ -2144,7 +2144,6 @@ Panel {
   }
 
   component InfoValue: Text {
-    textFormat: Text.PlainText
     color: root.bar.foreground
     font.family: root.bar.fontFamily
     font.pixelSize: Style.font.bodySmall

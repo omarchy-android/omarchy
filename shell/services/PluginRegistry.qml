@@ -9,6 +9,10 @@ QtObject {
 
   property string home: Quickshell.env("HOME")
   property string pluginsDir: home + "/.config/omarchy/plugins"
+  // QML Process-based manifest scans return an empty stream under PRoot even
+  // when Android's process restriction is disabled. The launch wrapper builds
+  // the same complete index with Bash built-ins before Quickshell starts.
+  readonly property bool prootMode: Quickshell.env("OMARCHY_PROOT") === "1"
 
   // Set by shell.qml at startup so we can also scan bundled first-party plugins.
   property string firstPartyDir: ""
@@ -644,18 +648,28 @@ QtObject {
 
   property Process scanProcess: Process {
     onExited: function(exitCode) {
-      var output = scanStdout.text || ""
-      registry.parseScanOutput(output)
+      if (exitCode !== 0) {
+        registry.scanning = false
+        console.warn("PluginRegistry: scanner exited with status " + exitCode)
+      } else {
+        scanOutputFile.reload()
+      }
     }
-    stdout: StdioCollector {
-      id: scanStdout
-      waitForEnd: true
-    }
+  }
+
+  readonly property string scanOutputPath: Quickshell.env("XDG_RUNTIME_DIR") + "/omarchy-plugin-scan.txt"
+
+  property FileView scanOutputFile: FileView {
+    path: registry.scanOutputPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: registry.parseScanOutput(text())
+    onFileChanged: reload()
   }
 
   property Process initProcess: Process {
     onExited: {
-      localPluginWatcher.running = true
+      if (!registry.prootMode) localPluginWatcher.running = true
       registry.rescan()
     }
   }
@@ -683,12 +697,17 @@ QtObject {
 
   property Timer localPluginWatcherRestart: Timer {
     interval: 1000
-    onTriggered: localPluginWatcher.running = true
+    onTriggered: if (!registry.prootMode) localPluginWatcher.running = true
   }
 
   function rescan() {
     if (scanning) return
+    if (!firstPartyDir) return
     scanning = true
+    if (registry.prootMode) {
+      scanOutputFile.reload()
+      return
+    }
     // $0 = first-party dir, $1 = third-party dir. Some bash versions need the explicit -- separator.
     // First-party plugins may be grouped one level deeper, e.g. panels/audio
     // or services/battery.
@@ -714,13 +733,17 @@ QtObject {
       + "    emit_manifest thirdparty \"$sub/manifest.json\"; "
       + "  done; "
       + "}; "
-      + "scan_firstparty \"$0\"; "
-      + "scan_thirdparty \"$1\""
-    scanProcess.command = ["bash", "-c", script, registry.firstPartyDir, registry.pluginsDir]
+      + "{ scan_firstparty \"$0\"; scan_thirdparty \"$1\"; } > \"$2.tmp\"; "
+      + "mv -f -- \"$2.tmp\" \"$2\""
+    scanProcess.command = ["bash", "-c", script, registry.firstPartyDir, registry.pluginsDir, registry.scanOutputPath]
     scanProcess.running = true
   }
 
   function ensureUserDir() {
+    if (registry.prootMode) {
+      registry.rescan()
+      return
+    }
     initProcess.command = ["bash", "-c", "mkdir -p \"$0\"", registry.pluginsDir]
     initProcess.running = true
   }

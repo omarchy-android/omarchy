@@ -7,6 +7,8 @@ import qs.Ui
 BarWidget {
   id: root
   moduleName: "omarchy.system-update"
+  readonly property bool prootMode: Quickshell.env("OMARCHY_PROOT") === "1"
+                                  && Quickshell.env("OMARCHY_UNLIMITED_PROCS") !== "1"
 
   property bool updateAvailable: false
 
@@ -46,7 +48,7 @@ BarWidget {
 
   Timer {
     interval: 21600000
-    running: true
+    running: !root.prootMode
     repeat: true
     triggeredOnStart: true
     onTriggered: root.refresh()

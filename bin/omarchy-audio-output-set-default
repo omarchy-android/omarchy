@@ -12,6 +12,12 @@ if [[ -z $node_id || -z $sink_name ]]; then
   exit 1
 fi
 
+if [[ ${OMARCHY_PROOT:-0} == 1 ]]; then
+  export PULSE_SERVER=tcp:127.0.0.1:4715
+  timeout 2 pactl set-default-sink AAudio_sink 2>/dev/null || true
+  exit 0
+fi
+
 timeout 2 wpctl set-default "$node_id" 2>/dev/null || true
 timeout 2 pactl set-default-sink "$sink_name" 2>/dev/null || true
 

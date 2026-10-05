@@ -13,6 +13,11 @@ Panel {
   moduleName: "omarchy.audio"
   ipcTarget: "omarchy.audio"
 
+  readonly property bool prootAudio: Quickshell.env("OMARCHY_PROOT") === "1"
+  property real prootOutputVolume: 0
+  property bool prootOutputMuted: true
+  property bool prootAudioAvailable: false
+
   readonly property var sink: Pipewire.defaultAudioSink
   readonly property var source: Pipewire.defaultAudioSource
   readonly property var nodes: Pipewire.nodes ? Pipewire.nodes.values : []
@@ -142,11 +147,19 @@ Panel {
   onSinkChanged: resolveVolumeSink()
 
   function resolveVolumeSink() {
+    if (prootAudio) {
+      volumeSinkName = ""
+      return
+    }
     if (!volumeSinkProc.running) volumeSinkProc.running = true
   }
 
-  readonly property real outputVolume: volumeSink && volumeSink.audio ? volumeSink.audio.volume : 0
-  readonly property bool outputMuted: volumeSink && volumeSink.audio ? volumeSink.audio.muted : false
+  readonly property real outputVolume: prootAudio
+    ? prootOutputVolume
+    : (volumeSink && volumeSink.audio ? volumeSink.audio.volume : 0)
+  readonly property bool outputMuted: prootAudio
+    ? prootOutputMuted
+    : (volumeSink && volumeSink.audio ? volumeSink.audio.muted : false)
   readonly property real inputVolume: source && source.audio ? source.audio.volume : 0
   readonly property bool inputMuted: source && source.audio ? source.audio.muted : false
 
@@ -173,7 +186,9 @@ Panel {
   // Only channels that actually exist get a vote. A box with no default source
   // would otherwise report "input unmuted" forever, leaving the hero switch
   // able to mute but never to unmute.
-  readonly property bool hasOutput: !!(volumeSink && volumeSink.audio)
+  readonly property bool hasOutput: prootAudio
+    ? prootAudioAvailable
+    : !!(volumeSink && volumeSink.audio)
   readonly property bool hasInput: !!(source && source.audio)
   readonly property bool anyAudible: (hasOutput && !outputMuted) || (hasInput && !inputMuted)
   readonly property string toggleHint: anyAudible ? "Mute" : "Unmute"
@@ -415,6 +430,14 @@ Panel {
   function outputIcon(volume) {
     // Match the old Waybar pulseaudio glyph set. The Material Design speaker
     // icons render visually smaller in JetBrainsMono Nerd Font.
+    if (prootAudio) {
+      if (!prootAudioAvailable || outputMuted) return ""
+      var pv = volume === undefined ? outputVolume : volume
+      if (pv >= 0.67) return ""
+      if (pv >= 0.34) return ""
+      if (pv > 0) return ""
+      return ""
+    }
     if (!sink || !sink.audio) return ""
     if (isHeadphones(sink)) return "󰋋"
     if (outputMuted) return ""
@@ -438,8 +461,17 @@ Panel {
   }
 
   function setOutputVolume(v) {
-    if (!volumeSink || !volumeSink.audio) return outputVolume
     var volume = Math.max(0, Math.min(1, v))
+    if (prootAudio) {
+      if (!prootAudioAvailable) return outputVolume
+      prootOutputVolume = volume
+      Quickshell.execDetached([
+        "omarchy-proot-audio", "volume", String(Math.round(volume * 100))
+      ])
+      prootAudioRefresh.restart()
+      return volume
+    }
+    if (!volumeSink || !volumeSink.audio) return outputVolume
     volumeSink.audio.volume = volume
     return volume
   }
@@ -458,6 +490,13 @@ Panel {
   }
 
   function toggleOutputMute() {
+    if (prootAudio) {
+      if (!prootAudioAvailable) return
+      prootOutputMuted = !prootOutputMuted
+      Quickshell.execDetached(["omarchy-proot-audio", "mute-toggle"])
+      prootAudioRefresh.restart()
+      return
+    }
     if (volumeSink && volumeSink.audio) volumeSink.audio.muted = !volumeSink.audio.muted
   }
 
@@ -469,6 +508,10 @@ Panel {
   // at once. It reads as on while anything is still audible, which keeps
   // muting a single channel from the row below flipping the master switch.
   function toggleAllMuted() {
+    if (prootAudio) {
+      toggleOutputMute()
+      return
+    }
     var mute = anyAudible
     if (hasOutput) volumeSink.audio.muted = mute
     if (hasInput) source.audio.muted = mute
@@ -590,14 +633,38 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  PwObjectTracker { objects: root.candidateSinks }
-  PwObjectTracker { objects: root.candidateSources }
-  PwObjectTracker { objects: root.audioStreams }
+  PwObjectTracker { objects: root.prootAudio ? [] : root.candidateSinks }
+  PwObjectTracker { objects: root.prootAudio ? [] : root.candidateSources }
+  PwObjectTracker { objects: root.prootAudio ? [] : root.audioStreams }
 
   PwNodePeakMonitor {
     id: inputPeakMonitor
     node: root.source
-    enabled: root.opened && !!root.source
+    enabled: !root.prootAudio && root.opened && !!root.source
+  }
+
+  Process {
+    id: prootAudioStatusProc
+    command: ["omarchy-proot-audio", "status"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var fields = String(text).trim().split(/\s+/)
+        if (fields.length < 3) return
+        root.prootOutputVolume = Math.max(0, Math.min(1, Number(fields[0]) / 100))
+        root.prootOutputMuted = fields[1] === "1"
+        root.prootAudioAvailable = fields[2] === "1"
+      }
+    }
+  }
+
+  Timer {
+    id: prootAudioRefresh
+    interval: 2000
+    running: root.prootAudio
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: if (!prootAudioStatusProc.running) prootAudioStatusProc.running = true
   }
 
   Process {
@@ -620,7 +687,7 @@ Panel {
 
   Timer {
     interval: 5000
-    running: root.opened
+    running: root.opened && !root.prootAudio
     repeat: true
     triggeredOnStart: true
     onTriggered: if (!sinkAvailabilityProc.running) sinkAvailabilityProc.running = true
@@ -631,7 +698,7 @@ Panel {
   // tuning sink instead of the speakers.
   Timer {
     interval: 15000
-    running: true
+    running: !root.prootAudio
     repeat: true
     triggeredOnStart: true
     onTriggered: root.resolveVolumeSink()
@@ -728,7 +795,6 @@ Panel {
             // Status only — the switch owns muting, mouse and keyboard alike.
             Text {
               id: heroIcon
-              textFormat: Text.PlainText
               text: root.outputIcon()
               color: root.bar.foreground
               font.family: root.bar.fontFamily
@@ -779,7 +845,6 @@ Panel {
 
               Text {
                 id: heroLabel
-                textFormat: Text.PlainText
                 text: root.outputVolumeName(
                   outputSlider.dragging ? outputSlider.liveValue : root.outputVolume,
                   root.outputMuted
@@ -819,7 +884,6 @@ Panel {
 
               Text {
                 id: outputPercent
-                textFormat: Text.PlainText
                 text: Math.round((outputSlider.dragging ? outputSlider.liveValue : root.outputVolume) * 100) + "%"
                 color: Qt.darker(root.bar.foreground, 1.4)
                 font.family: root.bar.fontFamily
@@ -906,7 +970,6 @@ Panel {
 
               Text {
                 id: microphonePercent
-                textFormat: Text.PlainText
                 text: Math.round((inputSlider.dragging ? inputSlider.liveValue : root.inputVolume) * 100) + "%"
                 color: Qt.darker(root.bar.foreground, 1.4)
                 font.family: root.bar.fontFamily
@@ -1051,7 +1114,6 @@ Panel {
       spacing: Style.space(8)
 
       Text {
-        textFormat: Text.PlainText
         text: root.sinkGlyph(sinkRow.node)
         color: root.bar.foreground
         font.family: root.bar.fontFamily
@@ -1062,7 +1124,6 @@ Panel {
       }
 
       Text {
-        textFormat: Text.PlainText
         text: root.nodeLabel(sinkRow.node)
         color: root.bar.foreground
         font.family: root.bar.fontFamily
@@ -1112,7 +1173,6 @@ Panel {
       spacing: Style.space(8)
 
       Text {
-        textFormat: Text.PlainText
         text: root.sourceGlyph(sourceRow.node)
         color: root.bar.foreground
         font.family: root.bar.fontFamily
@@ -1123,7 +1183,6 @@ Panel {
       }
 
       Text {
-        textFormat: Text.PlainText
         text: root.nodeLabel(sourceRow.node)
         color: root.bar.foreground
         font.family: root.bar.fontFamily
@@ -1184,7 +1243,6 @@ Panel {
 
         Text {
           id: streamMuteIcon
-          textFormat: Text.PlainText
           text: streamRow.streamMuted ? "󰝟" : "󰕾"
           color: root.bar.foreground
           font.family: root.bar.fontFamily
@@ -1205,7 +1263,6 @@ Panel {
         }
 
         Text {
-          textFormat: Text.PlainText
           text: root.streamLabel(streamRow.node)
           color: root.bar.foreground
           font.family: root.bar.fontFamily
@@ -1218,7 +1275,6 @@ Panel {
 
         Text {
           id: streamPct
-          textFormat: Text.PlainText
           text: Math.round(streamRow.streamVolume * 100) + "%"
           color: Qt.darker(root.bar.foreground, 1.5)
           font.family: root.bar.fontFamily
