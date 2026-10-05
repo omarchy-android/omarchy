@@ -12,6 +12,9 @@ Item {
   id: root
 
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
+  readonly property bool isProot: Quickshell.env("OMARCHY_PROOT") === "1"
+  readonly property bool prootMode: Quickshell.env("OMARCHY_PROOT") === "1"
+                                  && Quickshell.env("OMARCHY_UNLIMITED_PROCS") !== "1"
 
   property var configuredHiddenEntryIds: ({})
   property var desktopHiddenEntryIds: ({})
@@ -71,6 +74,10 @@ Item {
   // The shell may start before first-install packages have finished placing
   // their icons; consumers call this when they open so icons appear live.
   function refreshIcons() {
+    // The fallback index traverses more than 32,000 icon files in this image.
+    // Qt's themed lookup and the startup/file-change scans already populate
+    // icons, so never repeat that traversal on every menu open under PRoot.
+    if (root.isProot) return
     if (!iconIndexScan.running) iconIndexScan.running = true
   }
 
@@ -78,6 +85,16 @@ Item {
     var id = String(desktopId || "")
     if (!id) return
     root.beginLaunchFeedback(name)
+    if (root.isProot) {
+      // Quickshell already has the complete Wayland session environment.
+      // Bypass UWSM/systemd activation, which cannot exist in PRoot, and send
+      // Chromium through the launcher that supplies its required sandbox flags.
+      if (id === "chromium")
+        Quickshell.execDetached([root.omarchyPath + "/bin/omarchy-launch-browser"])
+      else
+        Quickshell.execDetached(["gtk-launch", id + ".desktop"])
+      return
+    }
     // Start gtk-launch inside a scope under app-graphical.slice so apps do not
     // inherit wayland-wm@.service. Keeping gtk-launch as the desktop-entry
     // resolver supports IDs with spaces and entries that UWSM rejects.
@@ -255,14 +272,21 @@ Item {
   Connections {
     target: DesktopEntries.applications
     function onValuesChanged() {
-      hiddenEntryScan.running = true
-      iconIndexDebounce.restart()
+      if (!root.prootMode) {
+        hiddenEntryScan.running = true
+        iconIndexDebounce.restart()
+      }
       root.appsChanged()
     }
   }
 
   Component.onCompleted: {
-    hiddenEntryScan.running = true
-    iconIndexScan.running = true
+    // The fallback scans fork Bash and find processes. Android counts every
+    // PRoot child against Termux's small native-process allowance, while Qt's
+    // normal themed lookup and DesktopEntries already provide the core data.
+    if (!root.prootMode) {
+      hiddenEntryScan.running = true
+      iconIndexScan.running = true
+    }
   }
 }

@@ -789,6 +789,22 @@ Item {
     }
   }
 
+  // Handle activation at the panel-window level as well as the focused item.
+  // Nested compositors can briefly move QML item focus while the layer-shell
+  // surface still owns keyboard focus; a window shortcut keeps Return reliable
+  // in that interval without changing normal text input.
+  function activateCurrent(source) {
+    if (root.dmenuActive) {
+      if (root.mode === "input") root.applyDmenuSelection(root.filterText)
+      else if (displayModel.count > 0)
+        root.activateIndex(root.cursorActive ? root.selectedIndex : 0)
+    } else if (root.cursorActive) {
+      root.activateIndex(root.selectedIndex)
+    } else {
+      root.settleCursor()
+    }
+  }
+
   function requestDeleteSelected() {
     if (!root.cursorActive || root.selectedIndex < 0 || root.selectedIndex >= displayModel.count) return
     var row = displayModel.get(root.selectedIndex)
@@ -849,7 +865,10 @@ Item {
     selectedIndex = 0
     cursorActive = true
     root.disarmPointer()
-    root.evaluateGuards()
+    // Guard state is populated when the watched menu sources load. Rebuilding
+    // and launching the 172-condition package/hardware audit on every open
+    // competes with the panel's close animation under PRoot. Re-evaluation is
+    // still triggered by menu source reloads and an explicit menu refresh.
     opened = true
     rebuildDisplay()
     invalidateVolatileProvider(activeMenu)
@@ -997,6 +1016,17 @@ Item {
   property bool guardsPending: false
 
   function evaluateGuards() {
+    // The full package/provides inventory forks pacman, awk, and a login shell.
+    // In PRoot keep the real menu surface and actions, but leave conditional
+    // rows permissive instead of spending Android's native-process allowance.
+    if (Quickshell.env("OMARCHY_PROOT") === "1"
+        && Quickshell.env("OMARCHY_UNLIMITED_PROCS") !== "1") {
+      root.guardsPending = false
+      root.whenResults = ({})
+      root.checkedResults = ({})
+      root.disabledResults = ({})
+      return
+    }
     // Process ignores a command change while it is running, and `collected`
     // belongs to the run in flight, so a second evaluation cannot overwrite
     // the first: it would throw away the lines already read and never start.
@@ -1069,6 +1099,20 @@ Item {
     id: panel
     shown: root.opened && root.rowsLoaded
     WlrLayershell.namespace: "omarchy-menu"
+
+    Shortcut {
+      sequence: "Return"
+      context: Qt.ApplicationShortcut
+      enabled: root.opened && !root.deleteConfirmOpen
+      onActivated: root.activateCurrent("return-shortcut")
+    }
+
+    Shortcut {
+      sequence: "Enter"
+      context: Qt.ApplicationShortcut
+      enabled: root.opened && !root.deleteConfirmOpen
+      onActivated: root.activateCurrent("enter-shortcut")
+    }
 
     // The card opens centered exactly as always. The first search keystroke
     // or submenu move freezes the top line where it currently sits — from
@@ -1151,11 +1195,7 @@ Item {
             root.select(6)
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Right) {
-            if (root.dmenuActive) {
-              if (root.mode === "input") root.applyDmenuSelection(root.filterText)
-              else if (displayModel.count > 0) root.activateIndex(root.cursorActive ? root.selectedIndex : 0)
-            } else if (root.cursorActive) root.activateIndex(root.selectedIndex)
-            else root.settleCursor()
+            root.activateCurrent(event.key === Qt.Key_Right ? "right-key" : "focused-key")
             event.accepted = true
           } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127 && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.ShiftModifier)) {
             root.setFilter(root.filterText + event.text)
@@ -1198,7 +1238,6 @@ Item {
           color: "transparent"
 
           Text {
-            textFormat: Text.PlainText
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
@@ -1287,7 +1326,6 @@ Item {
 
               Text {
                 id: iconText
-                textFormat: Text.PlainText
                 visible: row.hasIcon && !row.isApp
                 text: row.icon
                 color: row.hasCursor ? root.selectedText : root.foreground
@@ -1329,7 +1367,6 @@ Item {
 
                 Text {
                   id: labelText
-                  textFormat: Text.PlainText
                   width: parent.width
                   text: row.label
                   color: row.hasCursor ? root.selectedText : root.foreground
@@ -1340,7 +1377,6 @@ Item {
                 }
 
                 Text {
-                  textFormat: Text.PlainText
                   width: parent.width
                   text: row.detail
                   visible: (root.filterText || row.kind === "dmenu") && row.detail.length > 0
@@ -1361,7 +1397,6 @@ Item {
                 spacing: 0
 
                 Text {
-                  textFormat: Text.PlainText
                   visible: false
                   text: row.childCount
                   color: root.foreground
@@ -1372,7 +1407,6 @@ Item {
                 }
 
                 Text {
-                  textFormat: Text.PlainText
                   text: row.kind === "menu" || row.kind === "link" ? "›" : ""
                   color: row.hasCursor ? root.selectedText : root.foreground
                   opacity: row.kind === "menu" || row.kind === "link" ? 0.36 : 0
@@ -1457,7 +1491,6 @@ Item {
             }
 
             Text {
-              textFormat: Text.PlainText
               text: root.filterText ? "No matches for “" + root.filterText + "”" : "Nothing here yet"
               color: root.foreground
               opacity: 0.7

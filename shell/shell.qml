@@ -13,6 +13,17 @@ import "services/AuthServiceStore.js" as AuthServiceStore
 ShellRoot {
   id: shell
 
+  // Hyprland can invoke this object through its `global` dispatcher without
+  // forking bash, jq, timeout, or a second qs IPC client. This gives the
+  // keyboard launcher the same in-process path as the bar's corner button.
+  GlobalShortcut {
+    appid: "omarchy"
+    name: "menu"
+    description: "Toggle the Omarchy root menu"
+    triggerDescription: "Super+Space"
+    onPressed: shell.toggle("omarchy.menu", '{"menu":"root"}')
+  }
+
   // Shared service instances. Plugins receive these via property injection
   // rather than re-importing them as singletons — relative-path imports do
   // not share singleton state, which silently leaves consumers with their
@@ -155,8 +166,8 @@ ShellRoot {
     pluginRegistry.shellConfigProvider = function() { return shell.shellConfig }
     pluginRegistry.shellConfigMutator = function(mutate) { shell.mutateShellConfig(mutate) }
     // PluginRegistry.ensureUserDir() runs in its own Component.onCompleted and
-    // chains rescan() once the directory exists. We also kick a scan here in
-    // case the user dir already existed at startup.
+    // chains rescan() once the directory exists. If that completion happened
+    // before firstPartyDir was assigned, this call performs the real scan now.
     pluginRegistry.rescan()
     shell._syncServices()
   }
